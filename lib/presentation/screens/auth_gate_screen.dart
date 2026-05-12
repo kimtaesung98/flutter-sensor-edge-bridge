@@ -1,7 +1,9 @@
 // lib/presentation/screens/auth_gate_screen.dart
 // Public-facing status screen (Gatekeeper View).
 // Admin access: password dialog → AdminMonitorScreen.
+// Brute-force protection: 3 failed attempts → 30s lockout.
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -14,6 +16,7 @@ const _border      = Color(0xFF1E2D40);
 const _neonGreen   = Color(0xFF00FF94);
 const _neonBlue    = Color(0xFF00B4FF);
 const _neonRed     = Color(0xFFFF3B5C);
+const _neonAmber   = Color(0xFFFFBB00);
 const _textPrimary = Color(0xFFE2E8F0);
 const _textSec     = Color(0xFF64748B);
 
@@ -40,11 +43,18 @@ class _AuthGateScreenState extends State<AuthGateScreen>
   late AnimationController _pulse;
   late Animation<double> _glow;
 
+  // Brute-force state (per session — resets on app restart)
+  static const _maxAttempts   = 3;
+  static const _lockoutSecs   = 30;
+  int       _failedAttempts   = 0;
+  DateTime? _lockedUntil;
+  Timer?    _lockoutTimer;
+  int       _lockoutRemaining = 0;
+
   @override
   void initState() {
     super.initState();
-    _pulse = AnimationController(
-        vsync: this, duration: const Duration(seconds: 2))
+    _pulse = AnimationController(vsync: this, duration: const Duration(seconds: 2))
       ..repeat(reverse: true);
     _glow = Tween(begin: 0.3, end: 1.0)
         .animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut));
@@ -53,12 +63,44 @@ class _AuthGateScreenState extends State<AuthGateScreen>
   @override
   void dispose() {
     _pulse.dispose();
+    _lockoutTimer?.cancel();
     super.dispose();
+  }
+
+  // ── Lockout management ────────────────────────────────────────────────────
+
+  bool get _isLockedOut =>
+      _lockedUntil != null && DateTime.now().isBefore(_lockedUntil!);
+
+  void _startLockout() {
+    _lockedUntil     = DateTime.now().add(const Duration(seconds: _lockoutSecs));
+    _lockoutRemaining = _lockoutSecs;
+    _lockoutTimer?.cancel();
+    _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      final rem = _lockedUntil!.difference(DateTime.now()).inSeconds;
+      if (rem <= 0) {
+        t.cancel();
+        setState(() {
+          _lockoutRemaining = 0;
+          _lockedUntil      = null;
+          _failedAttempts   = 0;
+        });
+      } else {
+        setState(() => _lockoutRemaining = rem);
+      }
+    });
   }
 
   // ── Password dialog ───────────────────────────────────────────────────────
 
   void _openAuthDialog() {
+    if (_isLockedOut) {
+      HapticFeedback.heavyImpact();
+      _showLockoutSnackbar();
+      return;
+    }
+
     final ctrl = TextEditingController();
     bool obscure = true;
     String? error;
@@ -77,15 +119,33 @@ class _AuthGateScreenState extends State<AuthGateScreen>
       pageBuilder: (ctx, _, __) => StatefulBuilder(
         builder: (ctx, setDS) {
           void tryUnlock() {
+            if (_isLockedOut) {
+              Navigator.of(ctx).pop();
+              _showLockoutSnackbar();
+              return;
+            }
             HapticFeedback.lightImpact();
             if (ctrl.text == widget.getAdminPassword()) {
+              setState(() => _failedAttempts = 0);
               Navigator.of(ctx).pop();
               widget.onAdminUnlocked();
             } else {
               HapticFeedback.heavyImpact();
-              setDS(() => error = 'ACCESS DENIED — invalid credentials');
+              setState(() => _failedAttempts++);
+              final remaining = _maxAttempts - _failedAttempts;
+              if (_failedAttempts >= _maxAttempts) {
+                _startLockout();
+                Navigator.of(ctx).pop();
+                _showLockoutSnackbar();
+              } else {
+                setDS(() => error =
+                    'ACCESS DENIED — $remaining attempt${remaining == 1 ? "" : "s"} remaining');
+              }
             }
           }
+
+          final attemptsLeft = _maxAttempts - _failedAttempts;
+          final showWarning  = _failedAttempts > 0 && !_isLockedOut;
 
           return Center(
             child: Material(
@@ -98,8 +158,7 @@ class _AuthGateScreenState extends State<AuthGateScreen>
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: _neonBlue.withOpacity(0.5)),
                   boxShadow: [
-                    BoxShadow(
-                        color: _neonBlue.withOpacity(0.14), blurRadius: 48)
+                    BoxShadow(color: _neonBlue.withOpacity(0.14), blurRadius: 48)
                   ],
                 ),
                 child: Column(
@@ -121,11 +180,35 @@ class _AuthGateScreenState extends State<AuthGateScreen>
                     const SizedBox(height: 16),
                     const Text(
                       'Enter administrator password to access\nPacket Monitor & system internals.',
-                      style: TextStyle(
-                          color: _textSec, fontSize: 12, height: 1.6),
+                      style: TextStyle(color: _textSec, fontSize: 12, height: 1.6),
                     ),
+                    if (showWarning) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: _neonAmber.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                              color: _neonAmber.withOpacity(0.4)),
+                        ),
+                        child: Row(children: [
+                          const Icon(Icons.warning_amber,
+                              color: _neonAmber, size: 13),
+                          const SizedBox(width: 6),
+                          Text(
+                            '$attemptsLeft attempt${attemptsLeft == 1 ? "" : "s"} '
+                            'left before lockout',
+                            style: const TextStyle(
+                                color: _neonAmber, fontSize: 11,
+                                fontFamily: 'monospace'),
+                          ),
+                        ]),
+                      ),
+                    ],
                     const SizedBox(height: 20),
-                    // Field
+                    // Password field
                     StatefulBuilder(builder: (_, setSF) => TextField(
                       controller: ctrl,
                       obscureText: obscure,
@@ -203,6 +286,24 @@ class _AuthGateScreenState extends State<AuthGateScreen>
     );
   }
 
+  void _showLockoutSnackbar() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        '🔒 LOCKED — try again in $_lockoutRemaining seconds',
+        style: const TextStyle(
+            color: _neonRed, fontFamily: 'monospace', fontSize: 12),
+      ),
+      backgroundColor: _panel,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: _neonRed.withOpacity(0.4)),
+      ),
+      duration: const Duration(seconds: 3),
+    ));
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -220,6 +321,8 @@ class _AuthGateScreenState extends State<AuthGateScreen>
               glow: _glow,
               onAdminTap: _openAuthDialog,
               onSettingsTap: widget.onSettingsTap,
+              isLockedOut: _isLockedOut,
+              lockoutRemaining: _lockoutRemaining,
             );
           },
         ),
@@ -235,10 +338,13 @@ class _GatekeeperBody extends StatelessWidget {
   final Animation<double> glow;
   final VoidCallback onAdminTap;
   final VoidCallback onSettingsTap;
+  final bool isLockedOut;
+  final int lockoutRemaining;
 
   const _GatekeeperBody({
     required this.status, required this.glow,
     required this.onAdminTap, required this.onSettingsTap,
+    required this.isLockedOut, required this.lockoutRemaining,
   });
 
   @override
@@ -256,14 +362,11 @@ class _GatekeeperBody extends StatelessWidget {
           children: [
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Text('SENSOR',
-                  style: TextStyle(
-                      color: _textSec, fontSize: 11,
+                  style: TextStyle(color: _textSec, fontSize: 11,
                       letterSpacing: 6, fontFamily: 'monospace')),
               const Text('BRIDGE',
-                  style: TextStyle(
-                      color: _textPrimary, fontSize: 44,
-                      fontWeight: FontWeight.w900, letterSpacing: -1.5,
-                      height: 1)),
+                  style: TextStyle(color: _textPrimary, fontSize: 44,
+                      fontWeight: FontWeight.w900, letterSpacing: -1.5, height: 1)),
               const SizedBox(height: 4),
               const Text('autonomous relay system',
                   style: TextStyle(color: _textSec, fontSize: 12)),
@@ -318,8 +421,7 @@ class _GatekeeperBody extends StatelessWidget {
                     ? 'All links up — relaying sensor data to edge'
                     : 'Connection lost — buffering to local storage',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: _textSec, fontSize: 12, height: 1.6),
+                style: const TextStyle(color: _textSec, fontSize: 12, height: 1.6),
               ),
             ]),
           ),
@@ -330,43 +432,68 @@ class _GatekeeperBody extends StatelessWidget {
         // Link cards
         Row(children: [
           Expanded(
-              child: _LinkCard(
-                  label: 'WEAR → PHONE',
-                  icon: Icons.watch_outlined,
-                  state: status.wearToPhone)),
+              child: _LinkCard(label: 'WEAR → PHONE',
+                  icon: Icons.watch_outlined, state: status.wearToPhone)),
           const SizedBox(width: 12),
           Expanded(
-              child: _LinkCard(
-                  label: 'PHONE → EDGE',
-                  icon: Icons.cloud_outlined,
-                  state: status.phoneToEdge)),
+              child: _LinkCard(label: 'PHONE → EDGE',
+                  icon: Icons.cloud_outlined, state: status.phoneToEdge)),
         ]),
 
         const Spacer(),
 
+        // Lockout banner
+        if (isLockedOut) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: _neonRed.withOpacity(0.07),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _neonRed.withOpacity(0.35)),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              const Icon(Icons.lock, color: _neonRed, size: 14),
+              const SizedBox(width: 8),
+              Text(
+                'LOCKED — ${lockoutRemaining}s remaining',
+                style: const TextStyle(color: _neonRed, fontSize: 12,
+                    fontFamily: 'monospace', letterSpacing: 1.5),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 8),
+        ],
+
         // Admin entry button
         GestureDetector(
           onTap: onAdminTap,
-          child: Container(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(vertical: 15),
             decoration: BoxDecoration(
-              color: _panel,
+              color: isLockedOut ? _neonRed.withOpacity(0.06) : _panel,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _border),
+              border: Border.all(
+                  color: isLockedOut ? _neonRed.withOpacity(0.35) : _border),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-                Icon(Icons.terminal, color: _textSec, size: 15),
-                SizedBox(width: 8),
-                Text('ADMIN ACCESS',
-                    style: TextStyle(
-                        color: _textSec, fontSize: 12,
-                        letterSpacing: 2.5, fontFamily: 'monospace')),
-                SizedBox(width: 8),
-                Icon(Icons.lock_outline, color: _textSec, size: 13),
-              ],
-            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(
+                isLockedOut ? Icons.lock : Icons.terminal,
+                color: isLockedOut ? _neonRed : _textSec,
+                size: 15,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                isLockedOut ? 'ACCESS LOCKED' : 'ADMIN ACCESS',
+                style: TextStyle(
+                    color: isLockedOut ? _neonRed : _textSec,
+                    fontSize: 12, letterSpacing: 2.5, fontFamily: 'monospace'),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.lock_outline,
+                  color: isLockedOut ? _neonRed : _textSec, size: 13),
+            ]),
           ),
         ),
         const SizedBox(height: 24),
@@ -410,25 +537,21 @@ class _LinkCard extends StatelessWidget {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Icon(icon, color: _color, size: 20),
           const SizedBox(height: 10),
-          Text(label,
-              style: const TextStyle(
-                  color: _textSec, fontSize: 9,
-                  letterSpacing: 1.5, fontFamily: 'monospace')),
+          Text(label, style: const TextStyle(color: _textSec, fontSize: 9,
+              letterSpacing: 1.5, fontFamily: 'monospace')),
           const SizedBox(height: 5),
           Row(children: [
             Container(
               width: 6, height: 6,
               decoration: BoxDecoration(
-                color: _color,
-                shape: BoxShape.circle,
+                color: _color, shape: BoxShape.circle,
                 boxShadow: [BoxShadow(color: _color, blurRadius: 5)],
               ),
             ),
             const SizedBox(width: 6),
-            Text(_stateLabel,
-                style: TextStyle(
-                    color: _color, fontSize: 11, fontFamily: 'monospace',
-                    fontWeight: FontWeight.w700, letterSpacing: 1)),
+            Text(_stateLabel, style: TextStyle(
+                color: _color, fontSize: 11, fontFamily: 'monospace',
+                fontWeight: FontWeight.w700, letterSpacing: 1)),
           ]),
         ]),
       );

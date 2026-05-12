@@ -50,14 +50,17 @@ Future<bool> _iosBackground(ServiceInstance service) async => true;
 void onStart(ServiceInstance service) async {
   // ── Re-init deps in this Isolate ──────────────────────────────────────────
   final prefs = await SharedPreferences.getInstance();
-  final edgeUrl =
-      prefs.getString('edge_url') ?? 'http://192.168.1.100:8080';
 
   TransmissionConfig config = TransmissionConfig(
     speed: TransmissionSpeedExtension.fromStorageKey(
         prefs.getString('transmission_speed') ?? 'RT'),
-    wifiOnly: prefs.getBool('wifi_only_mode') ?? false,
+    wifiOnly:      prefs.getBool('wifi_only_mode') ?? false,
+    edgeServerUrl: prefs.getString('edge_url') ?? 'http://192.168.1.100:8080',
   );
+
+  // Isolate uses edgeServerUrl from config (supports WiFi & Wired HTTP transports).
+  // Bluetooth transport is handled by the foreground layer via BluetoothEdgeTransport.
+  final edgeUrl = config.edgeServerUrl;
 
   final dbPath = p.join(await getDatabasesPath(), 'sensor_bridge.db');
   final db = await openDatabase(

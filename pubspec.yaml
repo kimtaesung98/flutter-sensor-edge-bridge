@@ -29,6 +29,18 @@ dependencies:
   # UUID — available if needed for production packet IDs
   uuid: ^4.5.1
 
+  # Network connectivity detection (WiFi / mobile / ethernet)
+  connectivity_plus: ^6.0.3
+
+  # WiFi SSID and IP address lookup
+  network_info_plus: ^5.0.3
+
+  # Bluetooth LE scanning and GATT communication
+  flutter_blue_plus: ^1.31.15
+
+  # Android runtime permission requests
+  permission_handler: ^11.3.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

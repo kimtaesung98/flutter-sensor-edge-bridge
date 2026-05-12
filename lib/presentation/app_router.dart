@@ -1,11 +1,12 @@
 // lib/presentation/app_router.dart
 // 3-screen router with AnimatedSwitcher.
-// Tracks Settings entry origin so onBack returns to the correct screen
-// (gate → settings → back = gate | admin → settings → back = admin).
+// Tracks Settings entry origin so onBack returns to the correct screen.
 
 import 'package:flutter/material.dart';
 
 import '../core/network/connectivity_orchestrator.dart';
+import '../core/network/wifi_status_service.dart';
+import '../core/services/bluetooth_scan_service.dart';
 import '../core/services/sync_service.dart';
 import '../domain/models/transmission_config.dart';
 import 'screens/admin_monitor_screen.dart';
@@ -17,6 +18,8 @@ enum _Screen { gate, admin, settings }
 class AppRouter extends StatefulWidget {
   final ConnectivityOrchestrator orchestrator;
   final SyncService syncService;
+  final WifiStatusService wifiStatusService;
+  final BluetoothScanService bluetoothScanService;
   final TransmissionConfig initialConfig;
   final String initialAdminId;
   final String initialAdminPassword;
@@ -27,6 +30,8 @@ class AppRouter extends StatefulWidget {
     super.key,
     required this.orchestrator,
     required this.syncService,
+    required this.wifiStatusService,
+    required this.bluetoothScanService,
     required this.initialConfig,
     required this.initialAdminId,
     required this.initialAdminPassword,
@@ -40,8 +45,6 @@ class AppRouter extends StatefulWidget {
 
 class _AppRouterState extends State<AppRouter> {
   _Screen _current = _Screen.gate;
-
-  /// Remembers which screen opened Settings so we can return correctly.
   _Screen _settingsOrigin = _Screen.gate;
 
   late TransmissionConfig _config;
@@ -51,12 +54,10 @@ class _AppRouterState extends State<AppRouter> {
   @override
   void initState() {
     super.initState();
-    _config = widget.initialConfig;
-    _adminId = widget.initialAdminId;
+    _config        = widget.initialConfig;
+    _adminId       = widget.initialAdminId;
     _adminPassword = widget.initialAdminPassword;
   }
-
-  // ── Navigation helpers ────────────────────────────────────────────────────
 
   void _goSettings(BuildContext context, _Screen origin) {
     setState(() {
@@ -69,14 +70,10 @@ class _AppRouterState extends State<AppRouter> {
     setState(() => _current = _settingsOrigin);
   }
 
-  // ── Config change propagation ─────────────────────────────────────────────
-
   void _onConfigChanged(TransmissionConfig cfg) {
     setState(() => _config = cfg);
-    widget.syncService.updateConfig(cfg); // hot-push to Isolate
+    widget.syncService.updateConfig(cfg);
   }
-
-  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -98,7 +95,6 @@ class _AppRouterState extends State<AppRouter> {
 
   Widget _buildCurrent(BuildContext context) {
     switch (_current) {
-      // ── Public Gatekeeper ───────────────────────────────────────────────
       case _Screen.gate:
         return AuthGateScreen(
           key: const ValueKey('gate'),
@@ -108,7 +104,6 @@ class _AppRouterState extends State<AppRouter> {
           onSettingsTap: () => _goSettings(context, _Screen.gate),
         );
 
-      // ── Admin Packet Monitor ────────────────────────────────────────────
       case _Screen.admin:
         return AdminMonitorScreen(
           key: const ValueKey('admin'),
@@ -119,7 +114,6 @@ class _AppRouterState extends State<AppRouter> {
           onBack: () => setState(() => _current = _Screen.gate),
         );
 
-      // ── Settings (origin-aware back) ────────────────────────────────────
       case _Screen.settings:
         return SettingsScreen(
           key: const ValueKey('settings'),
@@ -127,10 +121,12 @@ class _AppRouterState extends State<AppRouter> {
           adminId: _adminId,
           wearDeviceName: widget.wearDeviceName,
           wearOsVersion: widget.wearOsVersion,
+          bluetoothScanService: widget.bluetoothScanService,
+          wifiStatusService: widget.wifiStatusService,
           onConfigChanged: _onConfigChanged,
           onAdminIdChanged: (id) => setState(() => _adminId = id),
           onAdminPasswordChanged: (pw) => setState(() => _adminPassword = pw),
-          onBack: _backFromSettings, // returns to gate OR admin correctly
+          onBack: _backFromSettings,
         );
     }
   }

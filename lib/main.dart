@@ -17,7 +17,6 @@ import 'presentation/screens/settings_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Lock to portrait
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -30,15 +29,11 @@ void main() async {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
 
-  // Init background service (must run before runApp)
   await initializeBackgroundService();
-
-  // Wire up DI
   await setupLocator();
 
-  // Load persisted settings
-  final config = await SettingsPersistence.loadConfig();
-  final adminId = await SettingsPersistence.loadAdminId();
+  final config        = await SettingsPersistence.loadConfig();
+  final adminId       = await SettingsPersistence.loadAdminId();
   final adminPassword = await SettingsPersistence.loadAdminPassword();
 
   runApp(SensorBridgeApp(
@@ -79,13 +74,15 @@ class SensorBridgeApp extends StatelessWidget {
         fontFamily: 'monospace',
       ),
       home: AppRouter(
-        orchestrator: orchestrator,
-        syncService: syncService,
-        initialConfig: config,
-        initialAdminId: adminId,
+        orchestrator:         orchestrator,
+        syncService:          syncService,
+        wifiStatusService:    wifiStatus,
+        bluetoothScanService: bluetoothScanner,
+        initialConfig:        config,
+        initialAdminId:       adminId,
         initialAdminPassword: adminPassword,
-        wearDeviceName: 'Galaxy Watch 6', // Replace with real WearOS probe
-        wearOsVersion: 'Wear OS 4.0',    // Replace with real WearOS probe
+        wearDeviceName: config.wearDeviceName ?? 'Not paired',
+        wearOsVersion:  'Wear OS 4.0',
       ),
     );
   }
