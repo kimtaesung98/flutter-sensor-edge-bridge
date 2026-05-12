@@ -1,30 +1,91 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hijack_app/main.dart';
+import 'package:sensor_bridge/domain/entities/sensor_packet.dart';
+import 'package:sensor_bridge/domain/models/transmission_config.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('TransmissionConfig', () {
+    test('default values', () {
+      const config = TransmissionConfig();
+      expect(config.speed, TransmissionSpeed.realTime);
+      expect(config.wifiOnly, false);
+    });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    test('copyWith preserves unchanged fields', () {
+      const config = TransmissionConfig(
+        speed: TransmissionSpeed.fiveSeconds,
+        wifiOnly: true,
+      );
+      final updated = config.copyWith(wifiOnly: false);
+      expect(updated.speed, TransmissionSpeed.fiveSeconds);
+      expect(updated.wifiOnly, false);
+    });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    test('round-trips through toMap / fromMap', () {
+      const original = TransmissionConfig(
+        speed: TransmissionSpeed.threeSeconds,
+        wifiOnly: true,
+      );
+      final copy = TransmissionConfig.fromMap(original.toMap());
+      expect(copy, original);
+    });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    test('equality and hashCode', () {
+      const a = TransmissionConfig(speed: TransmissionSpeed.oneSecond);
+      const b = TransmissionConfig(speed: TransmissionSpeed.oneSecond);
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+    });
+  });
+
+  group('SensorPacket', () {
+    test('toMap / fromMap round-trip', () {
+      final packet = SensorPacket(
+        id: 'test-id',
+        timestamp: DateTime.fromMillisecondsSinceEpoch(1_000_000),
+        ax: 1.0,
+        ay: -0.5,
+        az: 9.8,
+        transmitted: false,
+      );
+      final copy = SensorPacket.fromMap(packet.toMap());
+      expect(copy.id, packet.id);
+      expect(copy.timestamp, packet.timestamp);
+      expect(copy.ax, packet.ax);
+      expect(copy.ay, packet.ay);
+      expect(copy.az, packet.az);
+      expect(copy.transmitted, packet.transmitted);
+    });
+
+    test('copyWith updates transmitted flag', () {
+      final packet = SensorPacket(
+        id: 'test-id',
+        timestamp: DateTime.now(),
+        ax: 0,
+        ay: 0,
+        az: 9.8,
+      );
+      final acked = packet.copyWith(transmitted: true);
+      expect(acked.transmitted, true);
+      expect(acked.id, packet.id);
+    });
+  });
+
+  group('TransmissionSpeed', () {
+    test('intervalMs values', () {
+      expect(TransmissionSpeed.realTime.intervalMs, 100);
+      expect(TransmissionSpeed.oneSecond.intervalMs, 1000);
+      expect(TransmissionSpeed.threeSeconds.intervalMs, 3000);
+      expect(TransmissionSpeed.fiveSeconds.intervalMs, 5000);
+    });
+
+    test('fromStorageKey round-trip', () {
+      for (final speed in TransmissionSpeed.values) {
+        expect(
+          TransmissionSpeedExtension.fromStorageKey(speed.storageKey),
+          speed,
+        );
+      }
+    });
   });
 }
