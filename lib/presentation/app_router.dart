@@ -1,6 +1,5 @@
 // lib/presentation/app_router.dart
-// 3-screen router with AnimatedSwitcher.
-// Tracks Settings entry origin so onBack returns to the correct screen.
+// Top-level router: onboarding → gate → admin / settings.
 
 import 'package:flutter/material.dart';
 
@@ -11,9 +10,10 @@ import '../core/services/sync_service.dart';
 import '../domain/models/transmission_config.dart';
 import 'screens/admin_monitor_screen.dart';
 import 'screens/auth_gate_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'screens/settings_screen.dart';
 
-enum _Screen { gate, admin, settings }
+enum _Screen { onboarding, gate, admin, settings }
 
 class AppRouter extends StatefulWidget {
   final ConnectivityOrchestrator orchestrator;
@@ -26,6 +26,9 @@ class AppRouter extends StatefulWidget {
   final String wearDeviceName;
   final String wearOsVersion;
 
+  /// Pass false to skip onboarding (already completed on a prior launch).
+  final bool showOnboarding;
+
   const AppRouter({
     super.key,
     required this.orchestrator,
@@ -37,6 +40,7 @@ class AppRouter extends StatefulWidget {
     required this.initialAdminPassword,
     required this.wearDeviceName,
     required this.wearOsVersion,
+    required this.showOnboarding,
   });
 
   @override
@@ -44,7 +48,7 @@ class AppRouter extends StatefulWidget {
 }
 
 class _AppRouterState extends State<AppRouter> {
-  _Screen _current = _Screen.gate;
+  late _Screen _current;
   _Screen _settingsOrigin = _Screen.gate;
 
   late TransmissionConfig _config;
@@ -54,6 +58,7 @@ class _AppRouterState extends State<AppRouter> {
   @override
   void initState() {
     super.initState();
+    _current       = widget.showOnboarding ? _Screen.onboarding : _Screen.gate;
     _config        = widget.initialConfig;
     _adminId       = widget.initialAdminId;
     _adminPassword = widget.initialAdminPassword;
@@ -78,12 +83,12 @@ class _AppRouterState extends State<AppRouter> {
   @override
   Widget build(BuildContext context) {
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 240),
+      duration: const Duration(milliseconds: 320),
       transitionBuilder: (child, anim) => FadeTransition(
         opacity: anim,
         child: SlideTransition(
           position: Tween<Offset>(
-            begin: const Offset(0.03, 0),
+            begin: const Offset(0.04, 0),
             end: Offset.zero,
           ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
           child: child,
@@ -95,6 +100,12 @@ class _AppRouterState extends State<AppRouter> {
 
   Widget _buildCurrent(BuildContext context) {
     switch (_current) {
+      case _Screen.onboarding:
+        return OnboardingScreen(
+          key: const ValueKey('onboarding'),
+          onComplete: () => setState(() => _current = _Screen.gate),
+        );
+
       case _Screen.gate:
         return AuthGateScreen(
           key: const ValueKey('gate'),

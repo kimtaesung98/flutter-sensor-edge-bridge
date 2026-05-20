@@ -1,14 +1,16 @@
 // lib/main.dart
 // App entry point:
-//   1. Init background service (registers Android foreground service)
-//   2. Setup DI locator (registers all singletons)
+//   1. Init background service
+//   2. Setup DI locator
 //   3. Load persisted config + admin credentials
-//   4. Launch AppRouter
+//   4. Check onboarding completion
+//   5. Launch AppRouter
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'core/services/background_service_handler.dart';
+import 'core/services/permission_service.dart';
 import 'dependency_injection/locator.dart';
 import 'domain/models/transmission_config.dart';
 import 'presentation/app_router.dart';
@@ -32,14 +34,16 @@ void main() async {
   await initializeBackgroundService();
   await setupLocator();
 
-  final config        = await SettingsPersistence.loadConfig();
-  final adminId       = await SettingsPersistence.loadAdminId();
-  final adminPassword = await SettingsPersistence.loadAdminPassword();
+  final config           = await SettingsPersistence.loadConfig();
+  final adminId          = await SettingsPersistence.loadAdminId();
+  final adminPassword    = await SettingsPersistence.loadAdminPassword();
+  final showOnboarding   = !(await PermissionService.isOnboardingComplete());
 
   runApp(SensorBridgeApp(
-    config: config,
-    adminId: adminId,
-    adminPassword: adminPassword,
+    config:          config,
+    adminId:         adminId,
+    adminPassword:   adminPassword,
+    showOnboarding:  showOnboarding,
   ));
 }
 
@@ -47,12 +51,14 @@ class SensorBridgeApp extends StatelessWidget {
   final TransmissionConfig config;
   final String adminId;
   final String adminPassword;
+  final bool showOnboarding;
 
   const SensorBridgeApp({
     super.key,
     required this.config,
     required this.adminId,
     required this.adminPassword,
+    required this.showOnboarding,
   });
 
   @override
@@ -81,8 +87,9 @@ class SensorBridgeApp extends StatelessWidget {
         initialConfig:        config,
         initialAdminId:       adminId,
         initialAdminPassword: adminPassword,
-        wearDeviceName: config.wearDeviceName ?? 'Not paired',
-        wearOsVersion:  'Wear OS 4.0',
+        wearDeviceName:       config.wearDeviceName ?? 'Not paired',
+        wearOsVersion:        'Wear OS 4.0',
+        showOnboarding:       showOnboarding,
       ),
     );
   }

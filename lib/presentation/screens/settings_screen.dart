@@ -5,10 +5,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/network/wifi_status_service.dart';
 import '../../core/services/bluetooth_scan_service.dart';
+import '../../core/services/permission_service.dart';
 import '../../domain/models/transmission_config.dart';
 import '../../domain/models/transport_type.dart';
 
@@ -128,6 +130,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _testing = false;
   String? _testResult;
 
+  // Permission state
+  Map<AppPermission, PermissionStatus> _permStatus = {};
+
   @override
   void initState() {
     super.initState();
@@ -135,6 +140,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _adminId  = widget.adminId;
     _wifiStatus = widget.wifiStatusService.current;
     _btState    = widget.bluetoothScanService.adapterState;
+
+    _loadPermissions();
 
     widget.wifiStatusService.statusStream.listen((s) {
       if (mounted) setState(() => _wifiStatus = s);
@@ -147,6 +154,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     widget.bluetoothScanService.adapterStateStream.listen((s) {
       if (mounted) setState(() => _btState = s);
     });
+  }
+
+  // ── Permission helpers ────────────────────────────────────────────────────
+
+  Future<void> _loadPermissions() async {
+    final map = await PermissionService.statusMap();
+    if (mounted) setState(() => _permStatus = map);
+  }
+
+  Future<void> _requestPermission(AppPermission perm) async {
+    final status = await PermissionService.requestOne(perm);
+    if (status.isPermanentlyDenied && mounted) {
+      _toast('설정 앱에서 권한을 직접 허용해 주세요.');
+      await PermissionService.openSettings();
+    }
+    await _loadPermissions();
   }
 
   // ── Config change helpers ─────────────────────────────────────────────────
@@ -679,6 +702,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onTap: _showChangePasswordDialog,
                   ),
                 ])),
+
+                const SizedBox(height: 24),
+
+                // ── PERMISSIONS ────────────────────────────────────────────
+                const _SectionLabel(text: 'PERMISSIONS', color: _neonAmber),
+                const SizedBox(height: 10),
+                _Card(child: Column(
+                  children: AppPermission.values.asMap().entries.map((e) {
+                    final perm   = e.value;
+                    final status = _permStatus[perm];
+                    final granted = status?.isGranted ?? false;
+                    final color   = granted ? _neonGreen : _neonAmber;
+                    return Column(children: [
+                      GestureDetector(
+                        onTap: granted ? null : () => _requestPermission(perm),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Row(children: [
+                            Icon(
+                              granted ? Icons.check_circle : Icons.radio_button_unchecked,
+                              color: color, size: 18,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(perm.title, style: TextStyle(
+                                    color: granted ? _textPrimary : _neonAmber,
+                                    fontSize: 13,
+                                    fontWeight: granted ? FontWeight.normal : FontWeight.w600)),
+                                const SizedBox(height: 2),
+                                Text(perm.description, style: const TextStyle(
+                                    color: _textSec, fontSize: 11, height: 1.4)),
+                              ],
+                            )),
+                            const SizedBox(width: 8),
+                            if (!granted)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: _neonAmber.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                      color: _neonAmber.withOpacity(0.4)),
+                                ),
+                                child: const Text('허용',
+                                    style: TextStyle(color: _neonAmber,
+                                        fontSize: 10, fontFamily: 'monospace',
+                                        fontWeight: FontWeight.w700)),
+                              ),
+                          ]),
+                        ),
+                      ),
+                      if (e.key < AppPermission.values.length - 1)
+                        const Divider(height: 1, color: _border),
+                    ]);
+                  }).toList(),
+                )),
 
                 const SizedBox(height: 48),
               ],
