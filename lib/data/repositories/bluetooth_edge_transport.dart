@@ -4,7 +4,7 @@
 
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart' as fbp;
 
 import '../../domain/entities/sensor_packet.dart';
 import '../../domain/repositories/i_edge_transport.dart';
@@ -15,8 +15,8 @@ const _kTxCharacteristicUuid = '0000ffe1-0000-1000-8000-00805f9b34fb';
 
 class BluetoothEdgeTransport implements IEdgeTransport {
   final String edgeDeviceId;
-  BluetoothDevice? _device;
-  BluetoothCharacteristic? _txChar;
+  fbp.BluetoothDevice? _device;
+  fbp.BluetoothCharacteristic? _txChar;
 
   BluetoothEdgeTransport({required this.edgeDeviceId});
 
@@ -25,12 +25,12 @@ class BluetoothEdgeTransport implements IEdgeTransport {
   Future<bool> _ensureConnected() async {
     // Already connected and characteristic resolved
     if (_txChar != null &&
-        FlutterBluePlus.connectedDevices
+        fbp.FlutterBluePlus.connectedDevices
             .any((d) => d.remoteId.str == edgeDeviceId)) {
       return true;
     }
     try {
-      _device = BluetoothDevice.fromId(edgeDeviceId);
+      _device = fbp.BluetoothDevice.fromId(edgeDeviceId);
       await _device!.connect(
           autoConnect: false, timeout: const Duration(seconds: 6));
 
@@ -87,7 +87,7 @@ class BluetoothEdgeTransport implements IEdgeTransport {
   @override
   Future<bool> ping() async {
     if (edgeDeviceId.isEmpty) return false;
-    return FlutterBluePlus.connectedDevices
+    return fbp.FlutterBluePlus.connectedDevices
         .any((d) => d.remoteId.str == edgeDeviceId);
   }
 }

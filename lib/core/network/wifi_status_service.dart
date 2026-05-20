@@ -52,14 +52,19 @@ class WifiStatusService {
 
       if (locGranted) {
         final info = NetworkInfo();
-        ssid = (await info.getWifiName())         ?? '';
-        ip   = (await info.getWifiIP())           ?? '';
+        ssid = (await info.getWifiName()) ?? '';
+        ip   = (await info.getWifiIP())   ?? '';
         // Strip surrounding quotes that Android sometimes adds
         if (ssid.startsWith('"') && ssid.endsWith('"')) {
           ssid = ssid.substring(1, ssid.length - 1);
         }
+        // Android 10+ returns '<unknown ssid>' when location services are
+        // globally disabled even if the permission is granted.
+        if (ssid == '<unknown ssid>' || ssid == 'unknown ssid') {
+          ssid = '(위치 서비스를 활성화하면 SSID가 표시됩니다)';
+        }
       } else {
-        ssid = '(location permission required)';
+        ssid = '(위치 권한 필요 — 권한 탭에서 허용하세요)';
       }
 
       _emit(WifiStatus(connected: true, ssid: ssid, ipAddress: ip));

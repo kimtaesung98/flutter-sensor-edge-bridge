@@ -124,7 +124,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Bluetooth state
   List<BleDevice> _bleDevices = [];
   bool _isScanning = false;
-  BluetoothAdapterState _btState = BluetoothAdapterState.unknown;
+  BtAdapterState _btState = BtAdapterState.unknown;
 
   // Connection test state
   bool _testing = false;
@@ -646,6 +646,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onScan: _startBtScan,
                         onSelectWear: () => _showDevicePickerDialog(forWear: true),
                         onSelectEdge: () => _showDevicePickerDialog(forWear: false),
+                        onEnableBt: () =>
+                            widget.bluetoothScanService.requestEnableBluetooth(),
                       ),
                     ],
 
@@ -905,7 +907,7 @@ class _WifiSection extends StatelessWidget {
 // ─── Bluetooth section ────────────────────────────────────────────────────────
 
 class _BluetoothSection extends StatelessWidget {
-  final BluetoothAdapterState adapterState;
+  final BtAdapterState adapterState;
   final List<BleDevice> devices;
   final bool isScanning;
   final String? wearDeviceId;
@@ -915,18 +917,21 @@ class _BluetoothSection extends StatelessWidget {
   final VoidCallback onScan;
   final VoidCallback onSelectWear;
   final VoidCallback onSelectEdge;
+  final VoidCallback onEnableBt;
 
   const _BluetoothSection({
-    required this.adapterState, required this.devices,
+    required this.adapterState,
+    required this.devices,
     required this.isScanning, required this.wearDeviceId,
     required this.wearDeviceName, required this.edgeDeviceId,
     required this.edgeDeviceName,
     required this.onScan, required this.onSelectWear, required this.onSelectEdge,
+    required this.onEnableBt,
   });
 
   @override
   Widget build(BuildContext context) {
-    final btOn = adapterState == BluetoothAdapterState.on;
+    final btOn = adapterState == BtAdapterState.on;
     final btColor = btOn ? _neonBlue : _neonRed;
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -946,6 +951,22 @@ class _BluetoothSection extends StatelessWidget {
             style: TextStyle(color: btColor, fontFamily: 'monospace',
                 fontSize: 12, fontWeight: FontWeight.w700),
           ),
+          const Spacer(),
+          if (!btOn && adapterState == BtAdapterState.off)
+            GestureDetector(
+              onTap: onEnableBt,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _neonBlue.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: _neonBlue.withOpacity(0.5)),
+                ),
+                child: const Text('ENABLE',
+                    style: TextStyle(color: _neonBlue, fontSize: 10,
+                        fontFamily: 'monospace', fontWeight: FontWeight.w700)),
+              ),
+            ),
         ]),
       ),
 
@@ -1011,11 +1032,11 @@ class _BluetoothSection extends StatelessWidget {
     ]);
   }
 
-  String _btStateLabel(BluetoothAdapterState s) {
+  String _btStateLabel(BtAdapterState s) {
     switch (s) {
-      case BluetoothAdapterState.off:         return 'Bluetooth OFF';
-      case BluetoothAdapterState.unavailable: return 'BT Unavailable';
-      default:                                return 'Checking...';
+      case BtAdapterState.off:         return 'Bluetooth OFF';
+      case BtAdapterState.unavailable: return 'BT Unavailable';
+      default:                         return 'Checking...';
     }
   }
 }
